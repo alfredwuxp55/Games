@@ -38,8 +38,9 @@ def get_random_location():
     """Generates a random location for the apple."""
     return {'x': random.randint(0, CELL_WIDTH - 1), 'y': random.randint(0, CELL_HEIGHT - 1)}
 
-def game_over(screen, clock):
+def game_over(screen, clock, collision_sound):
     """Displays game over message and waits before returning to the menu."""
+    collision_sound.play()  # 播放碰撞音效
     font_over = pygame.font.SysFont(None, 48)
     game_over_text = font_over.render("Game Over", True, RED)
     text_rect = game_over_text.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2))
@@ -48,7 +49,7 @@ def game_over(screen, clock):
     pygame.display.update()
     pygame.time.wait(2000)
 
-def game_loop(screen, clock):
+def game_loop(screen, clock, apple_eat_sound, collision_sound):
     """Main game loop for Snake. Returns to the menu on collision."""
     snake_coords = [
         {'x': 3, 'y': 5},
@@ -85,17 +86,18 @@ def game_loop(screen, clock):
 
         # Check for collision with walls
         if head['x'] < 0 or head['x'] >= CELL_WIDTH or head['y'] < 0 or head['y'] >= CELL_HEIGHT:
-            game_over(screen, clock)
+            game_over(screen, clock, collision_sound)
             return "MENU"
 
         # Check for collision with itself
         for segment in snake_coords:
             if segment['x'] == head['x'] and segment['y'] == head['y']:
-                game_over(screen, clock)
+                game_over(screen, clock, collision_sound)
                 return "MENU"
 
         snake_coords.insert(0, head)
         if head['x'] == apple['x'] and head['y'] == apple['y']:
+            apple_eat_sound.play()  # 播放吃苹果音效
             apple = get_random_location()
         else:
             snake_coords.pop()
@@ -106,7 +108,7 @@ def game_loop(screen, clock):
         pygame.display.update()
         clock.tick(16)
 
-def menu_loop(screen, clock, font_title, font_button):
+def menu_loop(screen, clock, font_title, font_button, game_start_sound):
     """Menu screen that displays English text and waits for the user to start the game."""
     while True:
         start_text = font_button.render("Start Game", True, WHITE)
@@ -121,6 +123,7 @@ def menu_loop(screen, clock, font_title, font_button):
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_pos = pygame.mouse.get_pos()
                 if button_rect.collidepoint(mouse_pos):
+                    game_start_sound.play()  # 播放游戏开始音效
                     return "GAME"
 
         screen.fill(BLACK)
@@ -137,6 +140,13 @@ def menu_loop(screen, clock, font_title, font_button):
 
 def main():
     pygame.init()
+    pygame.mixer.init()  # 初始化混音器
+
+    # 加载音效文件（确保音效文件与代码在同一目录）
+    game_start_sound = pygame.mixer.Sound("game_start.wav")
+    apple_eat_sound = pygame.mixer.Sound("eat_apple.wav")
+    collision_sound = pygame.mixer.Sound("game_over.wav")
+
     clock = pygame.time.Clock()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     pygame.display.set_caption("Ian's Snake Game")
@@ -147,9 +157,9 @@ def main():
     state = "MENU"
     while True:
         if state == "MENU":
-            state = menu_loop(screen, clock, font_title, font_button)
+            state = menu_loop(screen, clock, font_title, font_button, game_start_sound)
         elif state == "GAME":
-            state = game_loop(screen, clock)
+            state = game_loop(screen, clock, apple_eat_sound, collision_sound)
 
 if __name__ == "__main__":
     main()
