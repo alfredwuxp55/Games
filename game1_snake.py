@@ -105,7 +105,7 @@ def update_apple_position(apple, snake_coords, obstacles):
     return apple
 
 def game_over(screen, clock, collision_sound):
-    """Displays Game Over message (for boundary, self-collision, etc.) and then returns to menu."""
+    """Displays Game Over message and then returns to menu."""
     collision_sound.play()
     font_over = pygame.font.SysFont(None, 48)
     text = font_over.render("Game Over", True, RED)
@@ -117,10 +117,11 @@ def game_over(screen, clock, collision_sound):
 
 def game_loop(screen, clock, apple_eat_sound, collision_sound):
     """
-    Snake mode: The player controls the snake and the apple moves randomly.
-    When the snake eats the apple, the snake grows and the apple respawns.
-    Obstacles are present; if the snake's next cell is an obstacle, the snake stays in place.
-    The snake can move in all four directions (no 180° reversal protection).
+    Snake mode: The player controls the snake, the apple moves randomly.
+    - If the snake eats the apple, the snake grows and the apple respawns.
+    - If the snake's head touches its body or leaves the map, game over.
+    - If the snake tries to move into an obstacle, it stays in place that frame.
+    - The snake can move in all four directions freely.
     """
     snake_coords = [
         {'x': 3, 'y': 5},
@@ -157,37 +158,37 @@ def game_loop(screen, clock, apple_eat_sound, collision_sound):
         elif direction == RIGHT:
             proposed_head['x'] += 1
 
+        # Check boundary
         if not (0 <= proposed_head['x'] < CELL_WIDTH and 0 <= proposed_head['y'] < CELL_HEIGHT):
             game_over(screen, clock, collision_sound)
             return "MENU"
 
-        # Check if the new head would hit an obstacle
+        # Check obstacle
         if any(obs['x'] == proposed_head['x'] and obs['y'] == proposed_head['y'] for obs in obstacles):
-            new_head = snake_coords[0].copy()  # Do not move this frame
+            new_head = snake_coords[0].copy()  # do not move this frame
         else:
             new_head = proposed_head
-            # Game over if the snake's head touches its body
+            # If snake's head touches its body, game over
             if new_head in snake_coords[1:]:
                 game_over(screen, clock, collision_sound)
                 return "MENU"
 
-        # Update snake movement: if moving, insert new head.
+        # Update snake
         if new_head != snake_coords[0]:
             snake_coords.insert(0, new_head)
-            # If snake eats apple, grow (do not remove tail) and respawn apple.
+            # Check if snake eats apple
             if new_head['x'] == apple['x'] and new_head['y'] == apple['y']:
                 apple_eat_sound.play()
                 apple = get_random_location(obstacles)
             else:
                 snake_coords.pop()
 
-        # Apple moves randomly (discrete movement)
+        # Random apple movement
         apple = update_apple_position(apple, snake_coords, obstacles)
 
         screen.fill(BLACK)
         draw_obstacles(screen, obstacles)
         draw_snake(screen, snake_coords)
-        # Convert apple grid coordinate to pixel coordinate for drawing
         apple_pixel = {'x': apple['x'] * CELL_SIZE, 'y': apple['y'] * CELL_SIZE}
         draw_apple(screen, apple_pixel)
         pygame.display.update()
@@ -196,8 +197,8 @@ def game_loop(screen, clock, apple_eat_sound, collision_sound):
 def get_snake_direction(snake_coords, apple, obstacles):
     """
     Simple AI: Returns a direction (UP, DOWN, LEFT, RIGHT) for the snake to move toward the apple,
-    avoiding obstacles and self-collision. The apple parameter is in grid coordinates.
-    If no safe direction exists, returns None.
+    avoiding obstacles and self-collision. The apple is in grid coordinates.
+    If no safe direction is found, returns None (snake won't move).
     """
     head = snake_coords[0]
     dx = apple['x'] - head['x']
@@ -221,9 +222,11 @@ def get_snake_direction(snake_coords, apple, obstacles):
             candidate_dirs.append(RIGHT)
         elif dx < 0:
             candidate_dirs.append(LEFT)
+    # Append any directions not yet in the list, to check them last
     for d in [UP, DOWN, LEFT, RIGHT]:
         if d not in candidate_dirs:
             candidate_dirs.append(d)
+
     for d in candidate_dirs:
         new_head = head.copy()
         if d == UP:
@@ -237,6 +240,7 @@ def get_snake_direction(snake_coords, apple, obstacles):
         if not (0 <= new_head['x'] < CELL_WIDTH and 0 <= new_head['y'] < CELL_HEIGHT):
             continue
         if new_head in snake_coords[1:]:
+            # If new head is in the body, skip it (would cause game over)
             continue
         if any(obs['x'] == new_head['x'] and obs['y'] == new_head['y'] for obs in obstacles):
             continue
@@ -245,14 +249,11 @@ def get_snake_direction(snake_coords, apple, obstacles):
 
 def game_loop_apple(screen, clock, apple_eat_sound, collision_sound):
     """
-    Apple mode: The player controls the apple (discrete movement) and it moves continuously
-    in its current direction, while the snake is controlled by AI to chase the apple.
-    
-    - The player's arrow key press updates the apple's moving direction.
-    - The apple moves one cell per frame in that direction.
-    - When the snake's head reaches the apple, the snake grows (its tail is not removed)
-      and the apple respawns.
-    - Additionally, if the snake's head touches its body, the game ends.
+    Apple mode: The player controls the apple, the snake (AI) chases the apple.
+    - The apple moves one cell per frame in the current direction (set by player's arrow keys).
+    - The snake tries to move toward the apple each frame.
+    - If the snake's head collides with the apple, the snake grows and the apple respawns.
+    - If the snake's head collides with its own body, game over.
     """
     snake_coords = [
         {'x': 3, 'y': 5},
@@ -260,7 +261,7 @@ def game_loop_apple(screen, clock, apple_eat_sound, collision_sound):
         {'x': 1, 'y': 5}
     ]
     obstacles = create_obstacles()
-    apple = get_random_location(obstacles)  # apple stored in grid coordinates
+    apple = get_random_location(obstacles)  # apple in grid coordinates
     apple_direction = RIGHT  # initial apple direction
 
     while True:
@@ -268,7 +269,7 @@ def game_loop_apple(screen, clock, apple_eat_sound, collision_sound):
             if event.type == pygame.QUIT:
                 pygame.quit(); sys.exit()
             elif event.type == pygame.KEYDOWN:
-                # Update apple direction based on player's input
+                # Player changes apple direction
                 if event.key == pygame.K_UP:
                     apple_direction = UP
                 elif event.key == pygame.K_DOWN:
@@ -278,7 +279,7 @@ def game_loop_apple(screen, clock, apple_eat_sound, collision_sound):
                 elif event.key == pygame.K_RIGHT:
                     apple_direction = RIGHT
 
-        # Continuously move the apple in the current direction
+        # Move the apple continuously in the current direction
         new_apple = apple.copy()
         if apple_direction == UP:
             new_apple['y'] -= 1
@@ -288,11 +289,12 @@ def game_loop_apple(screen, clock, apple_eat_sound, collision_sound):
             new_apple['x'] -= 1
         elif apple_direction == RIGHT:
             new_apple['x'] += 1
+        # Check if new apple position is valid
         if (0 <= new_apple['x'] < CELL_WIDTH and 0 <= new_apple['y'] < CELL_HEIGHT) and \
            not any(obs['x'] == new_apple['x'] and obs['y'] == new_apple['y'] for obs in obstacles):
             apple = new_apple
 
-        # Snake AI movement toward the apple
+        # Snake AI movement
         snake_direction = get_snake_direction(snake_coords, apple, obstacles)
         if snake_direction:
             proposed_head = snake_coords[0].copy()
@@ -304,20 +306,23 @@ def game_loop_apple(screen, clock, apple_eat_sound, collision_sound):
                 proposed_head['x'] -= 1
             elif snake_direction == RIGHT:
                 proposed_head['x'] += 1
+            # Check boundary
             if not (0 <= proposed_head['x'] < CELL_WIDTH and 0 <= proposed_head['y'] < CELL_HEIGHT):
+                # If out of bounds, we won't move the snake this frame
                 new_head = snake_coords[0].copy()
             else:
                 new_head = proposed_head
-                # Check self-collision: if the new head touches any part of the body, game over.
+                # If new head is in body, game over
                 if new_head in snake_coords[1:]:
                     game_over(screen, clock, collision_sound)
                     return "MENU"
         else:
             new_head = snake_coords[0].copy()
 
+        # Update snake
         if new_head != snake_coords[0]:
             snake_coords.insert(0, new_head)
-            # If snake catches the apple, grow (do not remove tail) and respawn apple.
+            # If snake catches the apple, grow (do not remove tail) and respawn apple
             if new_head['x'] == apple['x'] and new_head['y'] == apple['y']:
                 apple_eat_sound.play()
                 apple = get_random_location(obstacles)
@@ -335,20 +340,30 @@ def game_loop_apple(screen, clock, apple_eat_sound, collision_sound):
 
 def menu_loop(screen, clock, font_title, font_button, game_start_sound):
     """
-    Displays the menu allowing the player to choose between:
-      "Play as Snake" or "Play as Apple".
+    Displays the menu allowing the player to choose:
+      "Play as Snake", "Play as Apple", or "Quit".
+    Also allows ESC to quit.
     """
     while True:
         snake_text = font_button.render("Play as Snake", True, WHITE)
         apple_text = font_button.render("Play as Apple", True, WHITE)
-        snake_button_rect = snake_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 - 40))
-        apple_button_rect = apple_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 + 40))
+        quit_text = font_button.render("Quit Game", True, WHITE)
+
+        snake_button_rect = snake_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 - 60))
+        apple_button_rect = apple_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2))
+        quit_button_rect  = quit_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 + 60))
+
         title_text = font_title.render("Snake Game", True, WHITE)
         title_rect = title_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/3))
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit(); sys.exit()
+            elif event.type == pygame.KEYDOWN:
+                # Press ESC to quit
+                if event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    sys.exit()
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_pos = pygame.mouse.get_pos()
                 if snake_button_rect.collidepoint(mouse_pos):
@@ -357,13 +372,22 @@ def menu_loop(screen, clock, font_title, font_button, game_start_sound):
                 elif apple_button_rect.collidepoint(mouse_pos):
                     game_start_sound.play()
                     return "APPLE"
+                elif quit_button_rect.collidepoint(mouse_pos):
+                    pygame.quit()
+                    sys.exit()
 
         screen.fill(BLACK)
         screen.blit(title_text, title_rect)
+        # Draw button frames
         pygame.draw.rect(screen, WHITE, snake_button_rect.inflate(20, 10), 2)
         pygame.draw.rect(screen, WHITE, apple_button_rect.inflate(20, 10), 2)
+        pygame.draw.rect(screen, WHITE, quit_button_rect.inflate(20, 10), 2)
+
+        # Blit text onto buttons
         screen.blit(snake_text, snake_button_rect)
         screen.blit(apple_text, apple_button_rect)
+        screen.blit(quit_text,  quit_button_rect)
+
         pygame.display.update()
         clock.tick(15)
 
@@ -391,7 +415,7 @@ def main():
                 state = game_loop(screen, clock, apple_eat_sound, collision_sound)
             elif mode == "APPLE":
                 state = game_loop_apple(screen, clock, apple_eat_sound, collision_sound)
-        # After game over, return to menu (state becomes "MENU")
+        # After game over, we do "return 'MENU'", so we come back here and re-run the menu.
 
 if __name__ == "__main__":
     main()
