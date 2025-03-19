@@ -12,6 +12,7 @@ WHITE = (255, 255, 255)
 RED   = (255, 0, 0)
 GRAY  = (128, 128, 128)
 GOLD  = (255, 215, 0)  # 用于金币文本
+
 # 下面是 20 种可供购买的皮肤颜色
 SKIN_COLORS = [
     (255,   0,   0),  (  0, 255,   0),  (  0,   0, 255),  (255, 255,   0),
@@ -25,6 +26,12 @@ UP = 'up'
 DOWN = 'down'
 LEFT = 'left'
 RIGHT = 'right'
+
+# --------------------- 覆盖菜单相关全局变量 ---------------------
+muted = False  # 声音初始为开启状态
+OVERLAY_RESTART_RECT = pygame.Rect(10, 10, 100, 30)
+OVERLAY_QUIT_RECT = pygame.Rect(10, 50, 100, 30)
+OVERLAY_VOLUME_RECT = pygame.Rect(10, 90, 100, 30)
 
 # --------------------- 绘制函数 ---------------------
 def draw_snake(surface, snake_coords, snake_color):
@@ -47,6 +54,18 @@ def draw_obstacles(surface, obstacles):
         y = obs['y'] * CELL_SIZE
         rect = pygame.Rect(x, y, CELL_SIZE, CELL_SIZE)
         pygame.draw.rect(surface, GRAY, rect)
+
+def draw_overlay_menu(screen, font_overlay, muted):
+    """在屏幕左上角绘制始终可见的覆盖菜单。"""
+    pygame.draw.rect(screen, WHITE, OVERLAY_RESTART_RECT, 2)
+    pygame.draw.rect(screen, WHITE, OVERLAY_QUIT_RECT, 2)
+    pygame.draw.rect(screen, WHITE, OVERLAY_VOLUME_RECT, 2)
+    restart_text = font_overlay.render("Restart", True, WHITE)
+    quit_text = font_overlay.render("Quit", True, WHITE)
+    volume_text = font_overlay.render("Volume: " + ("Off" if muted else "On"), True, WHITE)
+    screen.blit(restart_text, (OVERLAY_RESTART_RECT.x + 5, OVERLAY_RESTART_RECT.y + 5))
+    screen.blit(quit_text, (OVERLAY_QUIT_RECT.x + 5, OVERLAY_QUIT_RECT.y + 5))
+    screen.blit(volume_text, (OVERLAY_VOLUME_RECT.x + 5, OVERLAY_VOLUME_RECT.y + 5))
 
 # --------------------- 障碍物、随机位置 ---------------------
 def create_obstacles():
@@ -128,81 +147,110 @@ def game_loop(screen, clock, apple_eat_sound, collision_sound, coin_count,
       - 蛇头碰到身体或出界则游戏结束
       - 蛇移动若碰到障碍则停留
       - 使用 selected_skin 对应的颜色绘制蛇
+    新增覆盖菜单，允许随时重启、退出（返回主菜单）或切换音量状态
     返回 (state, coin_count) 以便在主循环更新金币、回到菜单等。
     """
-    snake_coords = [
-        {'x': 3, 'y': 5},
-        {'x': 2, 'y': 5},
-        {'x': 1, 'y': 5}
-    ]
-    direction = RIGHT
-    obstacles = create_obstacles()
-    apple = get_random_location(obstacles)  # 网格坐标
+    global muted
+    while True:  # 外层循环，支持重启
+        restart_pressed = False
+        # 初始化游戏状态
+        snake_coords = [
+            {'x': 3, 'y': 5},
+            {'x': 2, 'y': 5},
+            {'x': 1, 'y': 5}
+        ]
+        direction = RIGHT
+        obstacles = create_obstacles()
+        apple = get_random_location(obstacles)  # 网格坐标
+        # 创建覆盖菜单用的小字体
+        overlay_font = pygame.font.SysFont(None, 24)
 
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit(); sys.exit()
-            elif event.type == pygame.KEYDOWN:
-                # 允许任意方向
-                if event.key == pygame.K_UP:
-                    direction = UP
-                elif event.key == pygame.K_DOWN:
-                    direction = DOWN
-                elif event.key == pygame.K_LEFT:
-                    direction = LEFT
-                elif event.key == pygame.K_RIGHT:
-                    direction = RIGHT
+        running = True
+        while running:
+            # 处理事件
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit(); sys.exit()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_UP:
+                        direction = UP
+                    elif event.key == pygame.K_DOWN:
+                        direction = DOWN
+                    elif event.key == pygame.K_LEFT:
+                        direction = LEFT
+                    elif event.key == pygame.K_RIGHT:
+                        direction = RIGHT
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    pos = pygame.mouse.get_pos()
+                    if OVERLAY_RESTART_RECT.collidepoint(pos):
+                        restart_pressed = True
+                        running = False
+                        break
+                    elif OVERLAY_QUIT_RECT.collidepoint(pos):
+                        running = False
+                        return "MENU", coin_count
+                    elif OVERLAY_VOLUME_RECT.collidepoint(pos):
+                        muted = not muted
+                        apple_eat_sound.set_volume(0 if muted else 1)
+                        collision_sound.set_volume(0 if muted else 1)
+            
+            if not running:
+                break
 
-        # 计算新头位置
-        head = snake_coords[0].copy()
-        if direction == UP:
-            head['y'] -= 1
-        elif direction == DOWN:
-            head['y'] += 1
-        elif direction == LEFT:
-            head['x'] -= 1
-        elif direction == RIGHT:
-            head['x'] += 1
-
-        # 出界检查
-        if not (0 <= head['x'] < CELL_WIDTH and 0 <= head['y'] < CELL_HEIGHT):
-            game_over(screen, clock, collision_sound)
-            return "MENU", coin_count
-
-        # 障碍物检查
-        if any(obs['x'] == head['x'] and obs['y'] == head['y'] for obs in obstacles):
-            # 若下一个位置是障碍，则保持原位不动
+            # 计算新头位置
             head = snake_coords[0].copy()
-        else:
-            # 自身碰撞检查
-            if head in snake_coords[1:]:
+            if direction == UP:
+                head['y'] -= 1
+            elif direction == DOWN:
+                head['y'] += 1
+            elif direction == LEFT:
+                head['x'] -= 1
+            elif direction == RIGHT:
+                head['x'] += 1
+
+            # 出界检查
+            if not (0 <= head['x'] < CELL_WIDTH and 0 <= head['y'] < CELL_HEIGHT):
                 game_over(screen, clock, collision_sound)
                 return "MENU", coin_count
 
-        # 如果确实移动了，则插入新头
-        if head != snake_coords[0]:
-            snake_coords.insert(0, head)
-            # 吃苹果
-            if head['x'] == apple['x'] and head['y'] == apple['y']:
-                apple_eat_sound.play()
-                coin_count += 10
-                apple = get_random_location(obstacles)
+            # 障碍物检查
+            if any(obs['x'] == head['x'] and obs['y'] == head['y'] for obs in obstacles):
+                # 若下一个位置是障碍，则保持原位不动
+                head = snake_coords[0].copy()
             else:
-                snake_coords.pop()
+                # 自身碰撞检查
+                if head in snake_coords[1:]:
+                    game_over(screen, clock, collision_sound)
+                    return "MENU", coin_count
 
-        # 苹果随机移动
-        apple = update_apple_position(apple, snake_coords, obstacles)
+            # 如果确实移动了，则插入新头
+            if head != snake_coords[0]:
+                snake_coords.insert(0, head)
+                # 吃苹果
+                if head['x'] == apple['x'] and head['y'] == apple['y']:
+                    apple_eat_sound.play()
+                    coin_count += 10
+                    apple = get_random_location(obstacles)
+                else:
+                    snake_coords.pop()
 
-        # 绘制
-        screen.fill(BLACK)
-        draw_obstacles(screen, obstacles)
-        snake_color = SKIN_COLORS[selected_skin]
-        draw_snake(screen, snake_coords, snake_color)
-        apple_pixel = {'x': apple['x'] * CELL_SIZE, 'y': apple['y'] * CELL_SIZE}
-        draw_apple(screen, apple_pixel)
-        pygame.display.update()
-        clock.tick(16)
+            # 苹果随机移动
+            apple = update_apple_position(apple, snake_coords, obstacles)
+
+            # 绘制游戏画面
+            screen.fill(BLACK)
+            draw_obstacles(screen, obstacles)
+            snake_color = SKIN_COLORS[selected_skin]
+            draw_snake(screen, snake_coords, snake_color)
+            apple_pixel = {'x': apple['x'] * CELL_SIZE, 'y': apple['y'] * CELL_SIZE}
+            draw_apple(screen, apple_pixel)
+            # 绘制覆盖菜单（始终在左上角）
+            draw_overlay_menu(screen, overlay_font, muted)
+            pygame.display.update()
+            clock.tick(16)
+        
+        if restart_pressed:
+            continue  # 重新开始游戏回合
 
 # --------------------- AI 控制蛇的简单函数 ---------------------
 def get_snake_direction(snake_coords, apple, obstacles):
@@ -267,90 +315,117 @@ def game_loop_apple(screen, clock, apple_eat_sound, collision_sound, coin_count,
       - 蛇吃到苹果 +10 金币
       - 蛇头若碰到自身，游戏结束
       - 蛇和苹果的绘制都用 selected_skin 对应的颜色来画“蛇”
+    同时增加覆盖菜单，支持重启、退出（返回主菜单）和音量控制
     返回 (state, coin_count)。
     """
-    snake_coords = [
-        {'x': 3, 'y': 5},
-        {'x': 2, 'y': 5},
-        {'x': 1, 'y': 5}
-    ]
-    obstacles = create_obstacles()
-    apple = get_random_location(obstacles)
-    apple_direction = RIGHT
+    global muted
+    while True:  # 外层循环，用于支持重启
+        restart_pressed = False
+        snake_coords = [
+            {'x': 3, 'y': 5},
+            {'x': 2, 'y': 5},
+            {'x': 1, 'y': 5}
+        ]
+        obstacles = create_obstacles()
+        apple = get_random_location(obstacles)
+        apple_direction = RIGHT
+        overlay_font = pygame.font.SysFont(None, 24)
 
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit(); sys.exit()
-            elif event.type == pygame.KEYDOWN:
-                # 玩家改变苹果方向
-                if event.key == pygame.K_UP:
-                    apple_direction = UP
-                elif event.key == pygame.K_DOWN:
-                    apple_direction = DOWN
-                elif event.key == pygame.K_LEFT:
-                    apple_direction = LEFT
-                elif event.key == pygame.K_RIGHT:
-                    apple_direction = RIGHT
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit(); sys.exit()
+                elif event.type == pygame.KEYDOWN:
+                    # 玩家改变苹果方向
+                    if event.key == pygame.K_UP:
+                        apple_direction = UP
+                    elif event.key == pygame.K_DOWN:
+                        apple_direction = DOWN
+                    elif event.key == pygame.K_LEFT:
+                        apple_direction = LEFT
+                    elif event.key == pygame.K_RIGHT:
+                        apple_direction = RIGHT
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    pos = pygame.mouse.get_pos()
+                    if OVERLAY_RESTART_RECT.collidepoint(pos):
+                        restart_pressed = True
+                        running = False
+                        break
+                    elif OVERLAY_QUIT_RECT.collidepoint(pos):
+                        running = False
+                        return "MENU", coin_count
+                    elif OVERLAY_VOLUME_RECT.collidepoint(pos):
+                        muted = not muted
+                        apple_eat_sound.set_volume(0 if muted else 1)
+                        collision_sound.set_volume(0 if muted else 1)
+            
+            if not running:
+                break
 
-        # 苹果连续移动
-        new_apple = apple.copy()
-        if apple_direction == UP:
-            new_apple['y'] -= 1
-        elif apple_direction == DOWN:
-            new_apple['y'] += 1
-        elif apple_direction == LEFT:
-            new_apple['x'] -= 1
-        elif apple_direction == RIGHT:
-            new_apple['x'] += 1
-        # 检查边界与障碍
-        if (0 <= new_apple['x'] < CELL_WIDTH and 0 <= new_apple['y'] < CELL_HEIGHT) and \
-           not any(obs['x'] == new_apple['x'] and obs['y'] == new_apple['y'] for obs in obstacles):
-            apple = new_apple
+            # 苹果连续移动
+            new_apple = apple.copy()
+            if apple_direction == UP:
+                new_apple['y'] -= 1
+            elif apple_direction == DOWN:
+                new_apple['y'] += 1
+            elif apple_direction == LEFT:
+                new_apple['x'] -= 1
+            elif apple_direction == RIGHT:
+                new_apple['x'] += 1
+            # 检查边界与障碍
+            if (0 <= new_apple['x'] < CELL_WIDTH and 0 <= new_apple['y'] < CELL_HEIGHT) and \
+               not any(obs['x'] == new_apple['x'] and obs['y'] == new_apple['y'] for obs in obstacles):
+                apple = new_apple
 
-        # 蛇自动朝苹果移动
-        snake_direction = get_snake_direction(snake_coords, apple, obstacles)
-        if snake_direction:
-            head = snake_coords[0].copy()
-            if snake_direction == UP:
-                head['y'] -= 1
-            elif snake_direction == DOWN:
-                head['y'] += 1
-            elif snake_direction == LEFT:
-                head['x'] -= 1
-            elif snake_direction == RIGHT:
-                head['x'] += 1
-            # 出界则本帧不动
-            if not (0 <= head['x'] < CELL_WIDTH and 0 <= head['y'] < CELL_HEIGHT):
+            # 蛇自动朝苹果移动
+            snake_direction = get_snake_direction(snake_coords, apple, obstacles)
+            if snake_direction:
+                head = snake_coords[0].copy()
+                if snake_direction == UP:
+                    head['y'] -= 1
+                elif snake_direction == DOWN:
+                    head['y'] += 1
+                elif snake_direction == LEFT:
+                    head['x'] -= 1
+                elif snake_direction == RIGHT:
+                    head['x'] += 1
+                # 出界则本帧不动
+                if not (0 <= head['x'] < CELL_WIDTH and 0 <= head['y'] < CELL_HEIGHT):
+                    new_head = snake_coords[0].copy()
+                else:
+                    new_head = head
+                    # 自身碰撞
+                    if new_head in snake_coords[1:]:
+                        game_over(screen, clock, collision_sound)
+                        return "MENU", coin_count
+            else:
                 new_head = snake_coords[0].copy()
-            else:
-                new_head = head
-                # 自身碰撞
-                if new_head in snake_coords[1:]:
-                    game_over(screen, clock, collision_sound)
-                    return "MENU", coin_count
-        else:
-            new_head = snake_coords[0].copy()
 
-        if new_head != snake_coords[0]:
-            snake_coords.insert(0, new_head)
-            # 吃到苹果
-            if new_head['x'] == apple['x'] and new_head['y'] == apple['y']:
-                apple_eat_sound.play()
-                coin_count += 10
-                apple = get_random_location(obstacles)
-            else:
-                snake_coords.pop()
+            if new_head != snake_coords[0]:
+                snake_coords.insert(0, new_head)
+                # 吃到苹果
+                if new_head['x'] == apple['x'] and new_head['y'] == apple['y']:
+                    apple_eat_sound.play()
+                    coin_count += 10
+                    apple = get_random_location(obstacles)
+                else:
+                    snake_coords.pop()
 
-        # 绘制
-        screen.fill(BLACK)
-        draw_obstacles(screen, obstacles)
-        snake_color = SKIN_COLORS[selected_skin]
-        draw_snake(screen, snake_coords, snake_color)
-        apple_pixel = {'x': apple['x'] * CELL_SIZE, 'y': apple['y'] * CELL_SIZE}
-        draw_apple(screen, apple_pixel)
-        pygame.display.update()
-        clock.tick(16)
+            # 绘制游戏画面
+            screen.fill(BLACK)
+            draw_obstacles(screen, obstacles)
+            snake_color = SKIN_COLORS[selected_skin]
+            draw_snake(screen, snake_coords, snake_color)
+            apple_pixel = {'x': apple['x'] * CELL_SIZE, 'y': apple['y'] * CELL_SIZE}
+            draw_apple(screen, apple_pixel)
+            # 绘制覆盖菜单
+            draw_overlay_menu(screen, overlay_font, muted)
+            pygame.display.update()
+            clock.tick(16)
+        
+        if restart_pressed:
+            continue  # 重新开始 Apple 模式回合
 
 # --------------------- 皮肤商店 ---------------------
 def skins_loop(screen, clock, font_button, coin_count, purchased_skins, selected_skin):
@@ -522,6 +597,11 @@ def main():
     game_start_sound = pygame.mixer.Sound("game_start.wav")
     apple_eat_sound  = pygame.mixer.Sound("eat_apple.wav")
     collision_sound  = pygame.mixer.Sound("game_over.wav")
+    
+    # 根据当前静音状态设置音量
+    game_start_sound.set_volume(0 if muted else 1)
+    apple_eat_sound.set_volume(0 if muted else 1)
+    collision_sound.set_volume(0 if muted else 1)
 
     clock = pygame.time.Clock()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
