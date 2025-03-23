@@ -162,7 +162,6 @@ def game_loop(screen, clock, apple_eat_sound, collision_sound, coin_count,
         direction = RIGHT
         obstacles = create_obstacles()
         apple = get_random_location(obstacles)  # 网格坐标
-        # 创建覆盖菜单用的小字体
         overlay_font = pygame.font.SysFont(None, 24)
 
         running = True
@@ -193,7 +192,6 @@ def game_loop(screen, clock, apple_eat_sound, collision_sound, coin_count,
                         muted = not muted
                         apple_eat_sound.set_volume(0 if muted else 1)
                         collision_sound.set_volume(0 if muted else 1)
-            
             if not running:
                 break
 
@@ -244,7 +242,6 @@ def game_loop(screen, clock, apple_eat_sound, collision_sound, coin_count,
             draw_snake(screen, snake_coords, snake_color)
             apple_pixel = {'x': apple['x'] * CELL_SIZE, 'y': apple['y'] * CELL_SIZE}
             draw_apple(screen, apple_pixel)
-            # 绘制覆盖菜单（始终在左上角）
             draw_overlay_menu(screen, overlay_font, muted)
             pygame.display.update()
             clock.tick(16)
@@ -419,13 +416,197 @@ def game_loop_apple(screen, clock, apple_eat_sound, collision_sound, coin_count,
             draw_snake(screen, snake_coords, snake_color)
             apple_pixel = {'x': apple['x'] * CELL_SIZE, 'y': apple['y'] * CELL_SIZE}
             draw_apple(screen, apple_pixel)
-            # 绘制覆盖菜单
             draw_overlay_menu(screen, overlay_font, muted)
             pygame.display.update()
             clock.tick(16)
         
         if restart_pressed:
             continue  # 重新开始 Apple 模式回合
+
+# --------------------- 2 Players 模式 ---------------------
+def game_loop_2players(screen, clock, apple_eat_sound, collision_sound, snake_eaten_sound,
+                        coin_count, purchased_skins, selected_skin):
+    """
+    2 Players 模式：
+      - 第一阶段：抢 apple 阶段，两位玩家各自控制一条蛇抢 apple，每吃到 apple 加长一格。
+      - 当累计吃到 5 个 apple 后，进入第二阶段：互吃阶段，此时不再生成 apple。
+      - 互吃阶段：当蛇头碰到对方蛇身体时，碰撞方保持增长（即不删除尾部），而被碰撞方去掉一节，并播放“snake 被吃”的音效；
+        当任一玩家只剩 1 格时，游戏结束。
+      - 蛇碰到自身时，游戏继续。
+    """
+    global muted
+    while True:  # 外层循环支持重启
+        restart_pressed = False
+        # 初始化两条蛇：初始位置稍有区分
+        snake1_coords = [{'x': 5, 'y': 10}, {'x': 4, 'y': 10}, {'x': 3, 'y': 10}]
+        snake2_coords = [{'x': CELL_WIDTH - 6, 'y': 10}, {'x': CELL_WIDTH - 5, 'y': 10}, {'x': CELL_WIDTH - 4, 'y': 10}]
+        direction1 = RIGHT   # 玩家1使用方向键控制
+        direction2 = LEFT    # 玩家2使用 WASD 控制
+        apple = get_random_location()  # 第一阶段使用 apple
+        apple_count = 0  # 记录累计吃到的 apple 数量
+        phase = 1  # 1 表示抢 apple 阶段，2 表示互吃阶段
+        overlay_font = pygame.font.SysFont(None, 24)
+
+        running = True
+        while running:
+            # 处理事件
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit(); sys.exit()
+                elif event.type == pygame.KEYDOWN:
+                    # 玩家1：方向键控制
+                    if event.key == pygame.K_UP:
+                        direction1 = UP
+                    elif event.key == pygame.K_DOWN:
+                        direction1 = DOWN
+                    elif event.key == pygame.K_LEFT:
+                        direction1 = LEFT
+                    elif event.key == pygame.K_RIGHT:
+                        direction1 = RIGHT
+                    # 玩家2：WASD 控制
+                    if event.key == pygame.K_w:
+                        direction2 = UP
+                    elif event.key == pygame.K_s:
+                        direction2 = DOWN
+                    elif event.key == pygame.K_a:
+                        direction2 = LEFT
+                    elif event.key == pygame.K_d:
+                        direction2 = RIGHT
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    pos = pygame.mouse.get_pos()
+                    if OVERLAY_RESTART_RECT.collidepoint(pos):
+                        restart_pressed = True
+                        running = False
+                        break
+                    elif OVERLAY_QUIT_RECT.collidepoint(pos):
+                        running = False
+                        return "MENU", coin_count
+                    elif OVERLAY_VOLUME_RECT.collidepoint(pos):
+                        muted = not muted
+                        apple_eat_sound.set_volume(0 if muted else 1)
+                        collision_sound.set_volume(0 if muted else 1)
+                        snake_eaten_sound.set_volume(0 if muted else 1)
+            if not running:
+                break
+
+            # 计算两蛇新头位置
+            new_head1 = snake1_coords[0].copy()
+            if direction1 == UP:
+                new_head1['y'] -= 1
+            elif direction1 == DOWN:
+                new_head1['y'] += 1
+            elif direction1 == LEFT:
+                new_head1['x'] -= 1
+            elif direction1 == RIGHT:
+                new_head1['x'] += 1
+
+            new_head2 = snake2_coords[0].copy()
+            if direction2 == UP:
+                new_head2['y'] -= 1
+            elif direction2 == DOWN:
+                new_head2['y'] += 1
+            elif direction2 == LEFT:
+                new_head2['x'] -= 1
+            elif direction2 == RIGHT:
+                new_head2['x'] += 1
+
+            # 出界检查
+            if not (0 <= new_head1['x'] < CELL_WIDTH and 0 <= new_head1['y'] < CELL_HEIGHT):
+                game_over(screen, clock, collision_sound)
+                return "MENU", coin_count
+            if not (0 <= new_head2['x'] < CELL_WIDTH and 0 <= new_head2['y'] < CELL_HEIGHT):
+                game_over(screen, clock, collision_sound)
+                return "MENU", coin_count
+
+            if phase == 1:
+                # 第一阶段：抢 apple 阶段
+                snake1_grow = False
+                snake2_grow = False
+                # 检查玩家1是否吃到 apple
+                if new_head1['x'] == apple['x'] and new_head1['y'] == apple['y']:
+                    snake1_grow = True
+                    apple_eat_sound.play()
+                    apple_count += 1
+                    apple = get_random_location()
+                # 检查玩家2是否吃到 apple
+                if new_head2['x'] == apple['x'] and new_head2['y'] == apple['y']:
+                    snake2_grow = True
+                    apple_eat_sound.play()
+                    apple_count += 1
+                    apple = get_random_location()
+
+                # 更新两蛇：吃到 apple 时不删除尾部，否则删除尾部保持长度
+                snake1_coords.insert(0, new_head1)
+                snake2_coords.insert(0, new_head2)
+                if not snake1_grow:
+                    snake1_coords.pop()
+                if not snake2_grow:
+                    snake2_coords.pop()
+
+                # 当累计吃到 5 个 apple 后，进入第二阶段
+                if apple_count >= 5:
+                    phase = 2
+            else:
+                # 第二阶段：互吃阶段，不再生成 apple
+                snake1_coords.insert(0, new_head1)
+                snake2_coords.insert(0, new_head2)
+                collision1 = False
+                collision2 = False
+                # 检查玩家1的头是否碰到玩家2的身体（排除头部）
+                for seg in snake2_coords[1:]:
+                    if new_head1['x'] == seg['x'] and new_head1['y'] == seg['y']:
+                        collision1 = True
+                        break
+                # 检查玩家2的头是否碰到玩家1的身体（排除头部）
+                for seg in snake1_coords[1:]:
+                    if new_head2['x'] == seg['x'] and new_head2['y'] == seg['y']:
+                        collision2 = True
+                        break
+
+                # 若发生碰撞，则碰撞方保持增长，被碰撞方去掉一节，并播放音效
+                if collision1:
+                    if len(snake2_coords) > 1:
+                        snake2_coords.pop()
+                        snake_eaten_sound.play()
+                else:
+                    snake1_coords.pop()
+
+                if collision2:
+                    if len(snake1_coords) > 1:
+                        snake1_coords.pop()
+                        snake_eaten_sound.play()
+                else:
+                    snake2_coords.pop()
+
+                # 检查游戏结束条件：任一玩家只剩 1 格时，游戏结束
+                if len(snake1_coords) <= 1 or len(snake2_coords) <= 1:
+                    game_over(screen, clock, collision_sound)
+                    return "MENU", coin_count
+
+            # 绘制画面
+            screen.fill(BLACK)
+            if phase == 1:
+                apple_pixel = {'x': apple['x'] * CELL_SIZE, 'y': apple['y'] * CELL_SIZE}
+                draw_apple(screen, apple_pixel)
+            # 为区分两玩家，玩家1使用选定皮肤颜色，玩家2使用固定颜色（例如 SKIN_COLORS[0]）
+            snake1_color = SKIN_COLORS[selected_skin]
+            snake2_color = SKIN_COLORS[0]
+            draw_snake(screen, snake1_coords, snake1_color)
+            draw_snake(screen, snake2_coords, snake2_color)
+            draw_overlay_menu(screen, overlay_font, muted)
+
+            # 显示阶段信息
+            info_font = pygame.font.SysFont(None, 24)
+            if phase == 1:
+                info_text = info_font.render(f"Phase 1: {apple_count} apple(s) eaten", True, WHITE)
+            else:
+                info_text = info_font.render("Phase 2: Mutual Eating", True, WHITE)
+            screen.blit(info_text, (WINDOW_WIDTH//2 - 100, 20))
+
+            pygame.display.update()
+            clock.tick(16)
+        if restart_pressed:
+            continue  # 重新开始本局
 
 # --------------------- 皮肤商店 ---------------------
 def skins_loop(screen, clock, font_button, coin_count, purchased_skins, selected_skin):
@@ -546,25 +727,28 @@ def menu_loop(screen, clock, font_title, font_button, game_start_sound,
     菜单界面，包含：
       - “Play as Snake”
       - “Play as Apple”
-      - “Skins” （皮肤商店）
+      - “2 Players Mode”
+      - “Skins”
       - “Quit Game”
     右上角显示金币。
     """
     while True:
+        # 绘制各菜单按钮文本
         snake_text = font_button.render("Play as Snake", True, WHITE)
         apple_text = font_button.render("Play as Apple", True, WHITE)
+        two_players_text = font_button.render("2 Players Mode", True, WHITE)
         skin_text  = font_button.render("Skins", True, WHITE)
         quit_text  = font_button.render("Quit Game", True, WHITE)
         coin_text  = font_button.render(f"Coins: {coin_count}", True, GOLD)
 
-        snake_rect = snake_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 - 80))
-        apple_rect = apple_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 - 20))
-        skin_rect  = skin_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 + 40))
-        quit_rect  = quit_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 + 100))
-
+        # 计算各按钮的矩形区域（可根据需要调整位置）
+        snake_rect = snake_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 - 100))
+        apple_rect = apple_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 - 40))
+        two_players_rect = two_players_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 + 20))
+        skin_rect  = skin_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 + 80))
+        quit_rect  = quit_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 + 140))
         title_text = font_title.render("Snake Game", True, WHITE)
         title_rect = title_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/3))
-
         coin_rect = coin_text.get_rect(topright=(WINDOW_WIDTH - 20, 20))
 
         for event in pygame.event.get():
@@ -581,6 +765,9 @@ def menu_loop(screen, clock, font_title, font_button, game_start_sound,
                 elif apple_rect.collidepoint(mx, my):
                     game_start_sound.play()
                     return "APPLE", coin_count, purchased_skins, selected_skin
+                elif two_players_rect.collidepoint(mx, my):
+                    game_start_sound.play()
+                    return "2PLAYERS", coin_count, purchased_skins, selected_skin
                 elif skin_rect.collidepoint(mx, my):
                     game_start_sound.play()
                     return "SKINS", coin_count, purchased_skins, selected_skin
@@ -589,18 +776,14 @@ def menu_loop(screen, clock, font_title, font_button, game_start_sound,
 
         screen.fill(BLACK)
         screen.blit(title_text, title_rect)
-
-        # 绘制按钮
         for text, rect in [(snake_text, snake_rect),
                            (apple_text, apple_rect),
+                           (two_players_text, two_players_rect),
                            (skin_text,  skin_rect),
                            (quit_text,  quit_rect)]:
             pygame.draw.rect(screen, WHITE, rect.inflate(20, 10), 2)
             screen.blit(text, rect)
-
-        # 显示金币
         screen.blit(coin_text, coin_rect)
-
         pygame.display.update()
         clock.tick(15)
 
@@ -613,11 +796,13 @@ def main():
     game_start_sound = pygame.mixer.Sound("game_start.wav")
     apple_eat_sound  = pygame.mixer.Sound("eat_apple.wav")
     collision_sound  = pygame.mixer.Sound("game_over.wav")
-    
+    snake_eaten_sound = pygame.mixer.Sound("snake_eaten.wav")  # 新增的音效
+
     # 根据当前静音状态设置音量
     game_start_sound.set_volume(0 if muted else 1)
     apple_eat_sound.set_volume(0 if muted else 1)
     collision_sound.set_volume(0 if muted else 1)
+    snake_eaten_sound.set_volume(0 if muted else 1)
 
     clock = pygame.time.Clock()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
@@ -628,33 +813,34 @@ def main():
 
     # 初始化金币数量、皮肤购买状态、选定皮肤
     coin_count = 1000
-    purchased_skins = [False]*20
-    purchased_skins[1] = True  # 比如可让绿色(下标1)默认已拥有
+    purchased_skins = [False] * 20
+    purchased_skins[1] = True  # 例如绿色（下标1）默认已拥有
     selected_skin = 1          # 默认绿色
 
     state = "MENU"
     while True:
         if state == "MENU":
-            # 返回的可能是 SNAKE / APPLE / SKINS
             state, coin_count, purchased_skins, selected_skin = menu_loop(
                 screen, clock, font_title, font_button, game_start_sound,
                 coin_count, purchased_skins, selected_skin
             )
         elif state == "SKINS":
-            # 进入皮肤商店
             state, coin_count, purchased_skins, selected_skin = skins_loop(
                 screen, clock, font_button, coin_count, purchased_skins, selected_skin
             )
         elif state == "SNAKE":
-            # 进入蛇模式
             state, coin_count = game_loop(
                 screen, clock, apple_eat_sound, collision_sound,
                 coin_count, purchased_skins, selected_skin
             )
         elif state == "APPLE":
-            # 进入苹果模式
             state, coin_count = game_loop_apple(
                 screen, clock, apple_eat_sound, collision_sound,
+                coin_count, purchased_skins, selected_skin
+            )
+        elif state == "2PLAYERS":
+            state, coin_count = game_loop_2players(
+                screen, clock, apple_eat_sound, collision_sound, snake_eaten_sound,
                 coin_count, purchased_skins, selected_skin
             )
 
