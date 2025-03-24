@@ -608,15 +608,16 @@ def game_loop_2players(screen, clock, apple_eat_sound, collision_sound, snake_ea
         if restart_pressed:
             continue  # 重新开始本局
 
-# --------------------- 皮肤商店 ---------------------
+# --------------------- 皮肤商店（展示后再购买） ---------------------
 def skins_loop(screen, clock, font_button, coin_count, purchased_skins, selected_skin):
     """
     皮肤商店界面：展示 20 种颜色，并在右侧展示预览效果。
-    - 若尚未购买且 coin_count >= 100，可点击购买(消耗100币)并自动选中
-    - 若已购买，可直接点击选中
-    - 点击后，在右侧展示该皮肤的预览（用该颜色绘制一条蛇示例）
-    - 返回 (state, coin_count, purchased_skins, selected_skin)
+      - 点击皮肤方块后，更新右侧预览显示
+      - 如果当前预览皮肤尚未购买且金币足够，则在预览区显示 "Purchase" 按钮
+      - 点击 "Purchase" 按钮后弹出确认对话框，确认后扣除 100 币并购买该皮肤
+    返回 (state, coin_count, purchased_skins, selected_skin)
     """
+    confirm_purchase_skin = None  # None 表示没有弹出确认对话框
     running = True
     while running:
         for event in pygame.event.get():
@@ -627,29 +628,48 @@ def skins_loop(screen, clock, font_button, coin_count, purchased_skins, selected
                     return "MENU", coin_count, purchased_skins, selected_skin
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = pygame.mouse.get_pos()
-                # 每个颜色方块的尺寸与布局（5行x4列）
-                padding = 20
-                box_size = 40
-                start_x = 50
-                start_y = 150
-                for i, color in enumerate(SKIN_COLORS):
-                    row = i // 4
-                    col = i % 4
-                    bx = start_x + col * (box_size + padding)
-                    by = start_y + row * (box_size + padding)
-                    rect = pygame.Rect(bx, by, box_size, box_size)
-                    if rect.collidepoint(mx, my):
-                        # 若已购买，则直接选中；否则若金币足够则购买并选中
-                        if purchased_skins[i]:
+                # 若已有确认对话框，则先处理对话框点击
+                if confirm_purchase_skin is not None:
+                    CONFIRM_WIDTH = 400
+                    CONFIRM_HEIGHT = 200
+                    confirm_rect = pygame.Rect((WINDOW_WIDTH - CONFIRM_WIDTH) // 2, (WINDOW_HEIGHT - CONFIRM_HEIGHT) // 2, CONFIRM_WIDTH, CONFIRM_HEIGHT)
+                    yes_rect = pygame.Rect(confirm_rect.x + 50, confirm_rect.y + CONFIRM_HEIGHT - 60, 100, 40)
+                    no_rect = pygame.Rect(confirm_rect.x + CONFIRM_WIDTH - 150, confirm_rect.y + CONFIRM_HEIGHT - 60, 100, 40)
+                    if yes_rect.collidepoint(mx, my):
+                        coin_count -= 100
+                        purchased_skins[confirm_purchase_skin] = True
+                        selected_skin = confirm_purchase_skin
+                        confirm_purchase_skin = None
+                    elif no_rect.collidepoint(mx, my):
+                        confirm_purchase_skin = None
+                else:
+                    # 检查预览区的 Purchase 按钮点击
+                    preview_area = pygame.Rect(600, 150, 300, 300)
+                    if not purchased_skins[selected_skin] and coin_count >= 100:
+                        purchase_button_rect = pygame.Rect(preview_area.x + (preview_area.width - 120)//2, preview_area.y + preview_area.height + 20, 120, 40)
+                        if purchase_button_rect.collidepoint(mx, my):
+                            confirm_purchase_skin = selected_skin
+                            continue
+                    # 检查皮肤方块点击，更新预览
+                    padding = 20
+                    box_size = 40
+                    start_x = 50
+                    start_y = 150
+                    for i, color in enumerate(SKIN_COLORS):
+                        row = i // 4
+                        col = i % 4
+                        bx = start_x + col * (box_size + padding)
+                        by = start_y + row * (box_size + padding)
+                        rect = pygame.Rect(bx, by, box_size, box_size)
+                        if rect.collidepoint(mx, my):
                             selected_skin = i
-                        else:
-                            if coin_count >= 100:
-                                coin_count -= 100
-                                purchased_skins[i] = True
-                                selected_skin = i
-                        break
+                            break
+                    # 检查返回菜单按钮点击
+                    back_text = font_button.render("Back to Menu", True, WHITE)
+                    back_rect = back_text.get_rect(topleft=(50, 650))
+                    if back_rect.inflate(20, 10).collidepoint(mx, my):
+                        return "MENU", coin_count, purchased_skins, selected_skin
 
-        # 绘制皮肤商店界面
         screen.fill(BLACK)
 
         # 显示标题
@@ -661,7 +681,7 @@ def skins_loop(screen, clock, font_button, coin_count, purchased_skins, selected
         coin_text = font_button.render(f"Coins: {coin_count}", True, GOLD)
         screen.blit(coin_text, (WINDOW_WIDTH - 200, 50))
 
-        # 绘制颜色方块及其购买状态
+        # 绘制皮肤方块
         padding = 20
         box_size = 40
         start_x = 50
@@ -674,27 +694,24 @@ def skins_loop(screen, clock, font_button, coin_count, purchased_skins, selected
             by = start_y + row * (box_size + padding)
             rect = pygame.Rect(bx, by, box_size, box_size)
             pygame.draw.rect(screen, color, rect)
-
-            # 显示 Owned 或 100 coins 字样
+            # 显示 "Owned" 或 "100 coins"
             if purchased_skins[i]:
                 label = label_font.render("Owned", True, WHITE)
             else:
                 label = label_font.render("100 coins", True, WHITE)
             label_rect = label.get_rect(center=(bx + box_size/2, by + box_size + 12))
             screen.blit(label, label_rect)
-
-            # 若该皮肤被选中，则画白色边框
+            # 如果该皮肤被选中，则绘制白色边框
             if i == selected_skin:
                 pygame.draw.rect(screen, WHITE, rect, 3)
 
         # 绘制右侧预览区域
         preview_area = pygame.Rect(600, 150, 300, 300)
-        pygame.draw.rect(screen, GRAY, preview_area, 2)  # 绘制边框
+        pygame.draw.rect(screen, GRAY, preview_area, 2)
         preview_title = label_font.render("Preview", True, WHITE)
         preview_title_rect = preview_title.get_rect(center=(preview_area.centerx, preview_area.y - 20))
         screen.blit(preview_title, preview_title_rect)
-
-        # 在预览区域中绘制蛇的示例（使用选中的皮肤颜色）
+        # 绘制预览区的蛇示例
         preview_segment_size = 40
         spacing = 10
         total_width = 3 * preview_segment_size + 2 * spacing
@@ -704,18 +721,46 @@ def skins_loop(screen, clock, font_button, coin_count, purchased_skins, selected
             seg_rect = pygame.Rect(start_preview_x + i*(preview_segment_size + spacing), start_preview_y, preview_segment_size, preview_segment_size)
             pygame.draw.rect(screen, SKIN_COLORS[selected_skin], seg_rect)
             pygame.draw.rect(screen, WHITE, seg_rect, 2)
+        # 如果当前预览皮肤未购买且金币足够，显示 Purchase 按钮
+        if not purchased_skins[selected_skin] and coin_count >= 100:
+            purchase_button_rect = pygame.Rect(preview_area.x + (preview_area.width - 120)//2, preview_area.y + preview_area.height + 20, 120, 40)
+            pygame.draw.rect(screen, WHITE, purchase_button_rect, 2)
+            purchase_text = label_font.render("Purchase", True, WHITE)
+            purchase_text_rect = purchase_text.get_rect(center=purchase_button_rect.center)
+            screen.blit(purchase_text, purchase_text_rect)
+        elif not purchased_skins[selected_skin]:
+            insufficient_text = label_font.render("Not enough coins", True, RED)
+            insufficient_text_rect = insufficient_text.get_rect(center=(preview_area.centerx, preview_area.y + preview_area.height + 20))
+            screen.blit(insufficient_text, insufficient_text_rect)
 
-        # 返回菜单按钮
+        # 绘制返回菜单按钮
         back_text = font_button.render("Back to Menu", True, WHITE)
         back_rect = back_text.get_rect(topleft=(50, 650))
         pygame.draw.rect(screen, WHITE, back_rect.inflate(20,10), 2)
         screen.blit(back_text, back_rect)
 
-        # 检查返回按钮点击
-        if pygame.mouse.get_pressed()[0]:
-            mx, my = pygame.mouse.get_pos()
-            if back_rect.inflate(20,10).collidepoint(mx,my):
-                return "MENU", coin_count, purchased_skins, selected_skin
+        # 如果需要显示确认购买对话框，则绘制对话框
+        if confirm_purchase_skin is not None:
+            CONFIRM_WIDTH = 400
+            CONFIRM_HEIGHT = 200
+            confirm_rect = pygame.Rect((WINDOW_WIDTH - CONFIRM_WIDTH) // 2, (WINDOW_HEIGHT - CONFIRM_HEIGHT) // 2, CONFIRM_WIDTH, CONFIRM_HEIGHT)
+            pygame.draw.rect(screen, GRAY, confirm_rect)
+            pygame.draw.rect(screen, WHITE, confirm_rect, 2)
+            confirm_font = pygame.font.SysFont(None, 36)
+            confirm_text = confirm_font.render("Purchase for 100 coins?", True, WHITE)
+            text_rect = confirm_text.get_rect(center=(confirm_rect.centerx, confirm_rect.y + 50))
+            screen.blit(confirm_text, text_rect)
+            yes_rect = pygame.Rect(confirm_rect.x + 50, confirm_rect.y + CONFIRM_HEIGHT - 60, 100, 40)
+            no_rect = pygame.Rect(confirm_rect.x + CONFIRM_WIDTH - 150, confirm_rect.y + CONFIRM_HEIGHT - 60, 100, 40)
+            pygame.draw.rect(screen, WHITE, yes_rect, 2)
+            pygame.draw.rect(screen, WHITE, no_rect, 2)
+            button_font = pygame.font.SysFont(None, 28)
+            yes_text = button_font.render("Yes", True, WHITE)
+            no_text = button_font.render("No", True, WHITE)
+            yes_text_rect = yes_text.get_rect(center=yes_rect.center)
+            no_text_rect = no_text.get_rect(center=no_rect.center)
+            screen.blit(yes_text, yes_text_rect)
+            screen.blit(no_text, no_text_rect)
 
         pygame.display.update()
         clock.tick(15)
