@@ -1,4 +1,4 @@
-import pygame, sys, random
+import pygame, sys, random, math
 
 # --------------------- 基础设置 ---------------------
 WINDOW_WIDTH = 1000
@@ -35,12 +35,25 @@ OVERLAY_VOLUME_RECT = pygame.Rect(10, 90, 100, 30)
 
 # --------------------- 绘制函数 ---------------------
 def draw_snake(surface, snake_coords, snake_color):
-    """绘制蛇（使用选定的皮肤颜色）。"""
-    for coord in snake_coords:
+    """绘制蛇（使用选定的皮肤颜色），在蛇头上加上笑脸标识（线宽加粗）。"""
+    for i, coord in enumerate(snake_coords):
         x = coord['x'] * CELL_SIZE
         y = coord['y'] * CELL_SIZE
         rect = pygame.Rect(x, y, CELL_SIZE, CELL_SIZE)
         pygame.draw.rect(surface, snake_color, rect)
+        # 如果是蛇头，则绘制笑脸
+        if i == 0:
+            center_x = x + CELL_SIZE // 2
+            center_y = y + CELL_SIZE // 2
+            # 眼睛参数
+            eye_radius = 2
+            eye_offset_x = 4
+            eye_offset_y = 4
+            pygame.draw.circle(surface, BLACK, (center_x - eye_offset_x, center_y - eye_offset_y), eye_radius)
+            pygame.draw.circle(surface, BLACK, (center_x + eye_offset_x, center_y - eye_offset_y), eye_radius)
+            # 绘制微笑：使用弧线绘制蛇头下半部分，线宽由 1 加粗到 3
+            mouth_rect = pygame.Rect(x + 3, y + CELL_SIZE // 2, CELL_SIZE - 6, CELL_SIZE // 2)
+            pygame.draw.arc(surface, BLACK, mouth_rect, math.pi, 2*math.pi, 3)
 
 def draw_apple(surface, apple):
     """绘制苹果（基于像素坐标）。"""
@@ -146,7 +159,7 @@ def game_loop(screen, clock, apple_eat_sound, collision_sound, coin_count,
       - 吃苹果 +10 金币
       - 蛇头碰到身体或出界则游戏结束
       - 蛇移动若碰到障碍则停留
-      - 使用 selected_skin 对应的颜色绘制蛇
+      - 使用 selected_skin 对应的颜色绘制蛇，并在蛇头上加粗笑脸
     新增覆盖菜单，允许随时重启、退出（返回主菜单）或切换音量状态
     返回 (state, coin_count) 以便在主循环更新金币、回到菜单等。
     """
@@ -311,7 +324,7 @@ def game_loop_apple(screen, clock, apple_eat_sound, collision_sound, coin_count,
     Apple模式：玩家控制苹果移动，AI 控制蛇追赶苹果。
       - 蛇吃到苹果 +10 金币
       - 蛇头若碰到自身，游戏结束
-      - 蛇和苹果的绘制都用 selected_skin 对应的颜色来画“蛇”
+      - 蛇和苹果的绘制都用 selected_skin 对应的颜色来画“蛇”，并在蛇头上加粗笑脸
     同时增加覆盖菜单，支持重启、退出（返回主菜单）和音量控制
     返回 (state, coin_count)。
     """
@@ -433,6 +446,7 @@ def game_loop_2players(screen, clock, apple_eat_sound, collision_sound, snake_ea
       - 互吃阶段：当蛇头碰到对方蛇身体时，碰撞方保持增长（即不删除尾部），而被碰撞方去掉一节，并播放“snake 被吃”的音效；
         当任一玩家只剩 1 格时，游戏结束。
       - 蛇碰到自身时，游戏继续。
+      - 两条蛇均在蛇头位置显示粗线笑脸。
     """
     global muted
     while True:  # 外层循环支持重启
