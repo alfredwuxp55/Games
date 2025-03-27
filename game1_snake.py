@@ -73,6 +73,9 @@ muted = False  # 声音初始为开启状态
 reputation_level = 0
 reputation_upgrade_cost = 50
 
+# 静态背景列表（共 30 种背景）
+static_backgrounds = []
+
 # --------------------- 覆盖菜单相关全局变量 ---------------------
 OVERLAY_RESTART_RECT = pygame.Rect(10, 10, 100, 30)
 OVERLAY_QUIT_RECT = pygame.Rect(10, 50, 100, 30)
@@ -781,68 +784,36 @@ def skins_loop(screen, clock, font_button, coin_count, purchased_skins, selected
         pygame.display.update()
         clock.tick(15)
 
-# --------------------- 新增：根据声望等级绘制主菜单背景 ---------------------
-def draw_menu_background(screen, reputation_level):
-    if reputation_level == 0:
-        screen.fill(BLACK)
-        for _ in range(120):
+# --------------------- 新增：静态背景生成函数 ---------------------
+def generate_static_backgrounds():
+    """一次性生成 30 个静态背景，每个背景为一个 pygame.Surface 对象"""
+    backgrounds = []
+    for level in range(30):
+        surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+        # 基础颜色随声望等级变化
+        base_color = ((level * 8) % 256, (level * 5) % 256, (level * 3) % 256)
+        surf.fill(base_color)
+        # 固定随机种子保证每个背景静态不变
+        random.seed(level)
+        num_circles = 100 + level * 5  # 随着等级增加，背景上绘制的圆数量增多
+        for _ in range(num_circles):
             x = random.randint(0, WINDOW_WIDTH)
             y = random.randint(0, WINDOW_HEIGHT)
-            pygame.draw.circle(screen, (20, 20, 20), (x, y), random.randint(1, 2))
-    elif reputation_level == 1:
-        screen.fill((0, 0, 50))
-        for _ in range(120):
-            x = random.randint(0, WINDOW_WIDTH)
-            y = random.randint(0, WINDOW_HEIGHT)
-            pygame.draw.circle(screen, (220, 220, 220), (x, y), random.randint(1, 3))
-    elif reputation_level == 2:
-        screen.fill((30, 30, 60))
-        for _ in range(250):
-            x = random.randint(0, WINDOW_WIDTH)
-            y = random.randint(0, WINDOW_HEIGHT)
-            color = random.choice([(200,200,220), (180,180,200), (160,160,180)])
-            pygame.draw.circle(screen, color, (x, y), random.randint(1, 3))
-        pygame.draw.circle(screen, (210, 210, 190), (WINDOW_WIDTH - 150, 150), 50)
-    elif reputation_level == 3:
-        screen.fill((20, 0, 40))
-        for _ in range(300):
-            x = random.randint(0, WINDOW_WIDTH)
-            y = random.randint(0, WINDOW_HEIGHT)
-            pygame.draw.line(screen, (90, 90, 110), (x, y), (x + random.randint(-10,10), y + random.randint(-10,10)), 1)
-        for _ in range(150):
-            x = random.randint(0, WINDOW_WIDTH)
-            y = random.randint(0, WINDOW_HEIGHT)
-            pygame.draw.circle(screen, (100, 70, 130), (x, y), random.randint(5, 10))
-    elif reputation_level == 4:
-        screen.fill((10, 10, 10))
-        for _ in range(200):
-            rect_width = random.randint(10, 50)
-            rect_height = random.randint(10, 50)
-            x = random.randint(0, WINDOW_WIDTH - rect_width)
-            y = random.randint(0, WINDOW_HEIGHT - rect_height)
-            color = (random.randint(50, 200), random.randint(50, 200), random.randint(50, 200))
-            pygame.draw.rect(screen, color, (x, y, rect_width, rect_height))
-        for _ in range(150):
-            x = random.randint(0, WINDOW_WIDTH)
-            y = random.randint(0, WINDOW_HEIGHT)
-            pygame.draw.circle(screen, (220, 220, 220), (x, y), random.randint(5, 15), 2)
-    else:
-        screen.fill((0, 50, 0))
-        num_elements = 250 + reputation_level * 30
-        for _ in range(num_elements):
-            x = random.randint(0, WINDOW_WIDTH)
-            y = random.randint(0, WINDOW_HEIGHT)
-            pygame.draw.circle(screen, (240, 240, 220), (x, y), random.randint(1, 3))
-        for _ in range(60):
-            points = [(random.randint(0, WINDOW_WIDTH), random.randint(0, WINDOW_HEIGHT)) for _ in range(5)]
-            pygame.draw.polygon(screen, (random.randint(0,180), random.randint(0,180), random.randint(0,180)), points, 2)
+            radius = random.randint(1, 10)
+            color = (random.randint(0,255), random.randint(0,255), random.randint(0,255))
+            pygame.draw.circle(surf, color, (x,y), radius)
+        backgrounds.append(surf)
+    return backgrounds
 
 # --------------------- 菜单 ---------------------
 def menu_loop(screen, clock, font_title, font_button, game_start_sound,
               coin_count, purchased_skins, selected_skin, purchased_heads, selected_head):
-    global reputation_level, reputation_upgrade_cost
+    global reputation_level, reputation_upgrade_cost, static_backgrounds
     while True:
-        draw_menu_background(screen, reputation_level)
+        # 使用预生成的静态背景，根据声望等级显示相应背景（达到最高后保持在第 30 个背景）
+        index = min(reputation_level, 29)
+        screen.blit(static_backgrounds[index], (0,0))
+        
         snake_text = font_button.render("Play as Snake", True, WHITE)
         apple_text = font_button.render("Play as Apple", True, WHITE)
         two_players_text = font_button.render("2 Players Mode", True, WHITE)
@@ -885,7 +856,8 @@ def menu_loop(screen, clock, font_title, font_button, game_start_sound,
                 elif quit_rect.collidepoint(mx, my):
                     exit_game(coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
                 elif upgrade_rect.collidepoint(mx, my):
-                    if coin_count >= reputation_upgrade_cost:
+                    # 仅在背景未达到第 30 个时允许升级
+                    if reputation_level < 29 and coin_count >= reputation_upgrade_cost:
                         coin_count -= reputation_upgrade_cost
                         reputation_level += 1
                         reputation_upgrade_cost += 50
@@ -905,6 +877,7 @@ def menu_loop(screen, clock, font_title, font_button, game_start_sound,
 
 # --------------------- 主函数 ---------------------
 def main():
+    global static_backgrounds
     pygame.init()
     pygame.mixer.init()
 
@@ -924,6 +897,9 @@ def main():
 
     font_title  = pygame.font.SysFont(None, 48)
     font_button = pygame.font.SysFont(None, 36)
+
+    # 生成 30 种静态背景
+    static_backgrounds = generate_static_backgrounds()
 
     # 尝试加载存档记录
     record = load_game_record()
