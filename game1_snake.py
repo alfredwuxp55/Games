@@ -1,4 +1,30 @@
-import pygame, sys, random, math
+import pygame, sys, random, math, json, os
+
+# --------------------- 自动存档相关函数 ---------------------
+def load_game_record():
+    if os.path.exists("savegame.json"):
+        with open("savegame.json", "r") as f:
+            return json.load(f)
+    else:
+        return None
+
+def save_game_record(coin_count, purchased_skins, selected_skin, purchased_heads, selected_head, reputation_level, reputation_upgrade_cost):
+    data = {
+        "coin_count": coin_count,
+        "purchased_skins": purchased_skins,
+        "selected_skin": selected_skin,
+        "purchased_heads": purchased_heads,
+        "selected_head": selected_head,
+        "reputation_level": reputation_level,
+        "reputation_upgrade_cost": reputation_upgrade_cost
+    }
+    with open("savegame.json", "w") as f:
+        json.dump(data, f)
+
+def exit_game(coin_count, purchased_skins, selected_skin, purchased_heads, selected_head):
+    save_game_record(coin_count, purchased_skins, selected_skin, purchased_heads, selected_head, reputation_level, reputation_upgrade_cost)
+    pygame.quit()
+    sys.exit()
 
 # --------------------- 基础设置 ---------------------
 WINDOW_WIDTH = 1000
@@ -166,8 +192,8 @@ def update_apple_position(apple, snake_coords, obstacles):
     return apple
 
 # --------------------- 游戏结束 ---------------------
-def game_over(screen, clock, collision_sound):
-    """显示 Game Over 并暂停 2 秒。"""
+def game_over(screen, clock, collision_sound, coin_count, purchased_skins, selected_skin, purchased_heads, selected_head):
+    """显示 Game Over 并暂停 2 秒，同时播放碰撞音效，然后返回主菜单。"""
     collision_sound.play()
     font_over = pygame.font.SysFont(None, 48)
     text = font_over.render("Game Over", True, RED)
@@ -176,10 +202,10 @@ def game_over(screen, clock, collision_sound):
     screen.blit(text, rect)
     pygame.display.update()
     pygame.time.wait(2000)
+    return "MENU", coin_count, purchased_skins, selected_skin, purchased_heads, selected_head
 
 # --------------------- Snake模式 ---------------------
-def game_loop(screen, clock, apple_eat_sound, collision_sound, coin_count,
-              purchased_skins, selected_skin, selected_head):
+def game_loop(screen, clock, apple_eat_sound, collision_sound, coin_count, purchased_skins, selected_skin, purchased_heads, selected_head):
     """
     玩家控制蛇的模式：
       - 吃苹果 +10 金币
@@ -187,7 +213,7 @@ def game_loop(screen, clock, apple_eat_sound, collision_sound, coin_count,
       - 蛇移动若碰到障碍则停留
       - 使用 selected_skin 对应的颜色绘制蛇，同时在蛇头上绘制选购的头饰（若有）
     新增覆盖菜单，允许随时重启、退出（返回主菜单）或切换音量状态
-    返回 (state, coin_count) 以便在主循环更新金币、回到菜单等。
+    返回 (state, coin_count, purchased_skins, selected_skin, purchased_heads, selected_head) 以便在主循环更新记录。
     """
     global muted
     while True:  # 外层循环，支持重启
@@ -206,8 +232,10 @@ def game_loop(screen, clock, apple_eat_sound, collision_sound, coin_count,
         while running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit(); sys.exit()
+                    exit_game(coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
                 elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        exit_game(coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
                     if event.key == pygame.K_UP:
                         direction = UP
                     elif event.key == pygame.K_DOWN:
@@ -223,8 +251,7 @@ def game_loop(screen, clock, apple_eat_sound, collision_sound, coin_count,
                         running = False
                         break
                     elif OVERLAY_QUIT_RECT.collidepoint(pos):
-                        running = False
-                        return "MENU", coin_count
+                        return "MENU", coin_count, purchased_skins, selected_skin, purchased_heads, selected_head
                     elif OVERLAY_VOLUME_RECT.collidepoint(pos):
                         muted = not muted
                         apple_eat_sound.set_volume(0 if muted else 1)
@@ -243,15 +270,12 @@ def game_loop(screen, clock, apple_eat_sound, collision_sound, coin_count,
                 head['x'] += 1
 
             if not (0 <= head['x'] < CELL_WIDTH and 0 <= head['y'] < CELL_HEIGHT):
-                game_over(screen, clock, collision_sound)
-                return "MENU", coin_count
-
+                return game_over(screen, clock, collision_sound, coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
             if any(obs['x'] == head['x'] and obs['y'] == head['y'] for obs in obstacles):
                 head = snake_coords[0].copy()
             else:
                 if head in snake_coords[1:]:
-                    game_over(screen, clock, collision_sound)
-                    return "MENU", coin_count
+                    return game_over(screen, clock, collision_sound, coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
 
             if head != snake_coords[0]:
                 snake_coords.insert(0, head)
@@ -267,7 +291,6 @@ def game_loop(screen, clock, apple_eat_sound, collision_sound, coin_count,
             screen.fill(BLACK)
             draw_obstacles(screen, obstacles)
             snake_color = SKIN_COLORS[selected_skin]
-            # 如果已选购头饰则传入对应颜色，否则传入 None
             head_item = HEAD_ITEMS[selected_head] if selected_head != -1 else None
             draw_snake(screen, snake_coords, snake_color, head_item)
             apple_pixel = {'x': apple['x'] * CELL_SIZE, 'y': apple['y'] * CELL_SIZE}
@@ -327,8 +350,7 @@ def get_snake_direction(snake_coords, apple, obstacles):
     return None
 
 # --------------------- Apple模式 ---------------------
-def game_loop_apple(screen, clock, apple_eat_sound, collision_sound, coin_count,
-                    purchased_skins, selected_skin, selected_head):
+def game_loop_apple(screen, clock, apple_eat_sound, collision_sound, coin_count, purchased_skins, selected_skin, purchased_heads, selected_head):
     global muted
     while True:
         restart_pressed = False
@@ -346,8 +368,10 @@ def game_loop_apple(screen, clock, apple_eat_sound, collision_sound, coin_count,
         while running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit(); sys.exit()
+                    exit_game(coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
                 elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        exit_game(coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
                     if event.key == pygame.K_UP:
                         apple_direction = UP
                     elif event.key == pygame.K_DOWN:
@@ -363,8 +387,7 @@ def game_loop_apple(screen, clock, apple_eat_sound, collision_sound, coin_count,
                         running = False
                         break
                     elif OVERLAY_QUIT_RECT.collidepoint(pos):
-                        running = False
-                        return "MENU", coin_count
+                        return "MENU", coin_count, purchased_skins, selected_skin, purchased_heads, selected_head
                     elif OVERLAY_VOLUME_RECT.collidepoint(pos):
                         muted = not muted
                         apple_eat_sound.set_volume(0 if muted else 1)
@@ -401,8 +424,7 @@ def game_loop_apple(screen, clock, apple_eat_sound, collision_sound, coin_count,
                 else:
                     new_head = head
                     if new_head in snake_coords[1:]:
-                        game_over(screen, clock, collision_sound)
-                        return "MENU", coin_count
+                        return game_over(screen, clock, collision_sound, coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
             else:
                 new_head = snake_coords[0].copy()
 
@@ -431,7 +453,7 @@ def game_loop_apple(screen, clock, apple_eat_sound, collision_sound, coin_count,
 
 # --------------------- 2 Players 模式 ---------------------
 def game_loop_2players(screen, clock, apple_eat_sound, collision_sound, snake_eaten_sound,
-                        coin_count, purchased_skins, selected_skin, selected_head):
+                        coin_count, purchased_skins, selected_skin, purchased_heads, selected_head):
     global muted
     while True:
         restart_pressed = False
@@ -448,8 +470,10 @@ def game_loop_2players(screen, clock, apple_eat_sound, collision_sound, snake_ea
         while running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit(); sys.exit()
+                    exit_game(coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
                 elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        exit_game(coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
                     if event.key == pygame.K_UP:
                         direction1 = UP
                     elif event.key == pygame.K_DOWN:
@@ -473,8 +497,7 @@ def game_loop_2players(screen, clock, apple_eat_sound, collision_sound, snake_ea
                         running = False
                         break
                     elif OVERLAY_QUIT_RECT.collidepoint(pos):
-                        running = False
-                        return "MENU", coin_count
+                        return "MENU", coin_count, purchased_skins, selected_skin, purchased_heads, selected_head
                     elif OVERLAY_VOLUME_RECT.collidepoint(pos):
                         muted = not muted
                         apple_eat_sound.set_volume(0 if muted else 1)
@@ -504,11 +527,9 @@ def game_loop_2players(screen, clock, apple_eat_sound, collision_sound, snake_ea
                 new_head2['x'] += 1
 
             if not (0 <= new_head1['x'] < CELL_WIDTH and 0 <= new_head1['y'] < CELL_HEIGHT):
-                game_over(screen, clock, collision_sound)
-                return "MENU", coin_count
+                return game_over(screen, clock, collision_sound, coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
             if not (0 <= new_head2['x'] < CELL_WIDTH and 0 <= new_head2['y'] < CELL_HEIGHT):
-                game_over(screen, clock, collision_sound)
-                return "MENU", coin_count
+                return game_over(screen, clock, collision_sound, coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
 
             if phase == 1:
                 snake1_grow = False
@@ -562,14 +583,12 @@ def game_loop_2players(screen, clock, apple_eat_sound, collision_sound, snake_ea
                     snake2_coords.pop()
 
                 if len(snake1_coords) <= 1 or len(snake2_coords) <= 1:
-                    game_over(screen, clock, collision_sound)
-                    return "MENU", coin_count
+                    return game_over(screen, clock, collision_sound, coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
 
             screen.fill(BLACK)
             if phase == 1:
                 apple_pixel = {'x': apple['x'] * CELL_SIZE, 'y': apple['y'] * CELL_SIZE}
                 draw_apple(screen, apple_pixel)
-            # 对于 2P 模式，默认只有玩家1使用选购的皮肤和头饰
             snake1_color = SKIN_COLORS[selected_skin]
             head_item = HEAD_ITEMS[selected_head] if selected_head != -1 else None
             snake2_color = SKIN_COLORS[0]
@@ -589,20 +608,18 @@ def game_loop_2players(screen, clock, apple_eat_sound, collision_sound, snake_ea
 
 # --------------------- 皮肤商店（包含皮肤和头饰切换） ---------------------
 def skins_loop(screen, clock, font_button, coin_count, purchased_skins, selected_skin, purchased_heads, selected_head):
-    # shop_mode: "skins" 或 "head" 表示当前商店显示模式
     shop_mode = "skins"
     confirm_purchase_item = None
     running = True
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit(); sys.exit()
+                exit_game(coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     return "MENU", coin_count, purchased_skins, selected_skin, purchased_heads, selected_head
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = pygame.mouse.get_pos()
-                # 切换模式按钮
                 switch_rect = pygame.Rect(50, 100, 150, 40)
                 if switch_rect.collidepoint(mx, my):
                     shop_mode = "head" if shop_mode == "skins" else "skins"
@@ -627,7 +644,6 @@ def skins_loop(screen, clock, font_button, coin_count, purchased_skins, selected
                     elif no_rect.collidepoint(mx, my):
                         confirm_purchase_item = None
                 else:
-                    # 点击预览区域的购买按钮
                     preview_area = pygame.Rect(600, 150, 300, 300)
                     price = 100 if shop_mode == "skins" else HEAD_COST
                     if shop_mode == "skins":
@@ -642,7 +658,6 @@ def skins_loop(screen, clock, font_button, coin_count, purchased_skins, selected
                             if purchase_button_rect.collidepoint(mx, my):
                                 confirm_purchase_item = selected_head
                                 continue
-                    # 点击商品格子
                     padding = 20
                     box_size = 40
                     start_x = 50
@@ -660,14 +675,12 @@ def skins_loop(screen, clock, font_button, coin_count, purchased_skins, selected
                             else:
                                 selected_head = i
                             break
-                    # 返回按钮
                     back_text = font_button.render("Back to Menu", True, WHITE)
                     back_rect = back_text.get_rect(topleft=(50, 650))
                     if back_rect.inflate(20, 10).collidepoint(mx, my):
                         return "MENU", coin_count, purchased_skins, selected_skin, purchased_heads, selected_head
 
         screen.fill(BLACK)
-        # 绘制切换模式按钮
         switch_text = "Switch to Headwear" if shop_mode == "skins" else "Switch to Skins"
         switch_button = font_button.render(switch_text, True, WHITE)
         switch_rect = switch_button.get_rect(topleft=(50, 100))
@@ -709,8 +722,6 @@ def skins_loop(screen, clock, font_button, coin_count, purchased_skins, selected
         preview_title = label_font.render("Preview", True, WHITE)
         preview_title_rect = preview_title.get_rect(center=(preview_area.centerx, preview_area.y - 20))
         screen.blit(preview_title, preview_title_rect)
-        # 在预览区显示预览效果：如果是皮肤模式，则展示 3 段蛇身；
-        # 如果是头饰模式，则展示一个帽子（简单用矩形表示）
         if shop_mode == "skins":
             preview_segment_size = 40
             spacing = 10
@@ -722,7 +733,6 @@ def skins_loop(screen, clock, font_button, coin_count, purchased_skins, selected
                 pygame.draw.rect(screen, items[selected], seg_rect)
                 pygame.draw.rect(screen, WHITE, seg_rect, 2)
         else:
-            # 简单绘制一个帽子形状预览
             hat_points = [
                 (preview_area.centerx - 50, preview_area.centery),
                 (preview_area.centerx + 50, preview_area.centery),
@@ -773,10 +783,9 @@ def skins_loop(screen, clock, font_button, coin_count, purchased_skins, selected
 
 # --------------------- 新增：根据声望等级绘制主菜单背景 ---------------------
 def draw_menu_background(screen, reputation_level):
-    # 增加更多随机元素，同时使用柔和色调，避免刺眼
     if reputation_level == 0:
         screen.fill(BLACK)
-        for _ in range(120):  # 增加到 120 个
+        for _ in range(120):
             x = random.randint(0, WINDOW_WIDTH)
             y = random.randint(0, WINDOW_HEIGHT)
             pygame.draw.circle(screen, (20, 20, 20), (x, y), random.randint(1, 2))
@@ -855,10 +864,10 @@ def menu_loop(screen, clock, font_title, font_button, game_start_sound,
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit(); sys.exit()
+                exit_game(coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    pygame.quit(); sys.exit()
+                    exit_game(coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = pygame.mouse.get_pos()
                 if snake_rect.collidepoint(mx, my):
@@ -874,7 +883,7 @@ def menu_loop(screen, clock, font_title, font_button, game_start_sound,
                     game_start_sound.play()
                     return "SKINS", coin_count, purchased_skins, selected_skin, purchased_heads, selected_head
                 elif quit_rect.collidepoint(mx, my):
-                    pygame.quit(); sys.exit()
+                    exit_game(coin_count, purchased_skins, selected_skin, purchased_heads, selected_head)
                 elif upgrade_rect.collidepoint(mx, my):
                     if coin_count >= reputation_upgrade_cost:
                         coin_count -= reputation_upgrade_cost
@@ -916,12 +925,24 @@ def main():
     font_title  = pygame.font.SysFont(None, 48)
     font_button = pygame.font.SysFont(None, 36)
 
-    coin_count = 1000
-    purchased_skins = [False] * len(SKIN_COLORS)
-    purchased_skins[1] = True
-    selected_skin = 1
-    purchased_heads = [False] * len(HEAD_ITEMS)
-    selected_head = -1  # 初始无头饰
+    # 尝试加载存档记录
+    record = load_game_record()
+    if record:
+        coin_count = record.get("coin_count", 1000)
+        purchased_skins = record.get("purchased_skins", [False] * len(SKIN_COLORS))
+        selected_skin = record.get("selected_skin", 1)
+        purchased_heads = record.get("purchased_heads", [False] * len(HEAD_ITEMS))
+        selected_head = record.get("selected_head", -1)
+        global reputation_level, reputation_upgrade_cost
+        reputation_level = record.get("reputation_level", 0)
+        reputation_upgrade_cost = record.get("reputation_upgrade_cost", 50)
+    else:
+        coin_count = 1000
+        purchased_skins = [False] * len(SKIN_COLORS)
+        purchased_skins[1] = True
+        selected_skin = 1
+        purchased_heads = [False] * len(HEAD_ITEMS)
+        selected_head = -1
 
     state = "MENU"
     while True:
@@ -935,19 +956,19 @@ def main():
                 screen, clock, font_button, coin_count, purchased_skins, selected_skin, purchased_heads, selected_head
             )
         elif state == "SNAKE":
-            state, coin_count = game_loop(
+            state, coin_count, purchased_skins, selected_skin, purchased_heads, selected_head = game_loop(
                 screen, clock, apple_eat_sound, collision_sound,
-                coin_count, purchased_skins, selected_skin, selected_head
+                coin_count, purchased_skins, selected_skin, purchased_heads, selected_head
             )
         elif state == "APPLE":
-            state, coin_count = game_loop_apple(
+            state, coin_count, purchased_skins, selected_skin, purchased_heads, selected_head = game_loop_apple(
                 screen, clock, apple_eat_sound, collision_sound,
-                coin_count, purchased_skins, selected_skin, selected_head
+                coin_count, purchased_skins, selected_skin, purchased_heads, selected_head
             )
         elif state == "2PLAYERS":
-            state, coin_count = game_loop_2players(
+            state, coin_count, purchased_skins, selected_skin, purchased_heads, selected_head = game_loop_2players(
                 screen, clock, apple_eat_sound, collision_sound, snake_eaten_sound,
-                coin_count, purchased_skins, selected_skin, selected_head
+                coin_count, purchased_skins, selected_skin, purchased_heads, selected_head
             )
 
 if __name__ == "__main__":
